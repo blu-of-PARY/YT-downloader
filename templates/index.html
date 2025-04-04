@@ -165,11 +165,14 @@
         let formats = [];
 
         function checkVideo() {
-            const url = document.getElementById('url').value;
+            const url = document.getElementById('url').value.trim();
             if (!url) {
                 alert('URL을 입력해주세요');
                 return;
             }
+
+            // URL 형식 검사
+            let processedUrl = url;
 
             document.getElementById('video-info').style.display = 'none';
             document.getElementById('format-selector').style.display = 'none';

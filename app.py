@@ -37,6 +37,9 @@ def index():
 @app.route('/formats/<path:url>')
 def get_formats(url):
     try:
+        if '://' not in url:
+            url = 'https://' + url
+
         ydl_opts = {
             'no_color': True,
             'quiet': True,
@@ -297,4 +300,3 @@ def get_file(download_id):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
-    
