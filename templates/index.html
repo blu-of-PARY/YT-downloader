@@ -124,6 +124,22 @@
         .restart-btn:hover {
             background-color: #d32f2f;
         }
+        /* 여기에 자막 선택기 스타일 추가 */
+        #subtitle-selector {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        
+        /* 필요하다면 자막 선택 드롭다운 스타일 추가 */
+        #subtitle-select {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
@@ -156,6 +172,12 @@
         </div>
     </div>
 
+    <div id="subtitle-selector" style="display: none;">
+        <h3>자막 선택</h3>
+        <select id="subtitle-select"></select>
+        <button onclick="downloadSubtitle()">자막 다운로드</button>
+    </div>
+
 <!-- body 끝 부분 -->
     
     <!-- 기존 스크립트를 유지하고, 서비스 워커 등록 코드만 추가 -->
@@ -163,6 +185,7 @@
         let downloadId = null;
         let statusInterval = null;
         let formats = [];
+        let subtitles = {}; // 자막 정보 저장 변수 추가
 
         function checkVideo() {
             const url = document.getElementById('url').value.trim();
@@ -170,6 +193,77 @@
                 alert('URL을 입력해주세요');
                 return;
             }
+
+                        // 자막 정보도 함께 가져오기
+            fetch(`/subtitles/${encodeURIComponent(url)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('자막 정보 가져오기 오류:', data.error);
+                    return;
+                }
+                
+                // 자막 정보 저장
+                subtitles = data.subtitles || {};
+                
+                // 자막 선택 옵션 설정
+                const subtitleSelect = document.getElementById('subtitle-select');
+                subtitleSelect.innerHTML = '';
+                
+                if (Object.keys(subtitles).length > 0) {
+                    // 자막이 있는 경우
+                    for (const langCode in subtitles) {
+                        const lang = subtitles[langCode];
+                        for (const format of lang.formats) {
+                            const option = document.createElement('option');
+                            option.value = format.format_id;
+                            option.textContent = `${lang.name} (.${format.ext})`;
+                            subtitleSelect.appendChild(option);
+                        }
+                    }
+                    
+                    document.getElementById('subtitle-selector').style.display = 'block';
+                } else {
+                    document.getElementById('subtitle-selector').style.display = 'none';
+                }
+            })
+
+            .catch(error => {
+                console.error('자막 정보 요청 오류:', error);
+            });
+
+        function downloadSubtitle() {
+            const url = document.getElementById('url').value;
+            const formatId = document.getElementById('subtitle-select').value;
+            
+            document.getElementById('download-form').style.display = 'none';
+            document.getElementById('video-info').style.display = 'none';
+            document.getElementById('format-selector').style.display = 'none';
+            document.getElementById('subtitle-selector').style.display = 'none';
+            document.getElementById('download-progress').style.display = 'block';
+            document.getElementById('status').textContent = '자막 다운로드 준비 중...';
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('download-link').style.display = 'none';
+
+            fetch('/download_subtitle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    'url': url,
+                    'format_id': formatId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                downloadId = data.download_id;
+                statusInterval = setInterval(checkStatus, 1000);
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = '오류: ' + error;
+            });
+        }
 
             // URL 형식 검사
             let processedUrl = url;

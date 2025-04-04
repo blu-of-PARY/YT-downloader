@@ -30,8 +30,15 @@ def icons(icon_name):
     return send_from_directory(os.path.join(app.root_path, 'static', 'images', 'icons'),
                               icon_name)
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
+    if request.method == 'POST':
+        url = request.form.get('url')
+        if url:
+            # 다운로드 처리 코드...
+            return render_template('index.html', message="다운로드 완료!")
+        else:
+            return render_template('index.html', message="URL을 입력하세요.")
     return render_template('index.html')
 
 @app.route('/formats/<path:url>')
@@ -298,5 +305,160 @@ def get_file(download_id):
         )
     return "파일을 찾을 수 없습니다.", 404
 
+# 자막 정보 가져오기 함수 추가
+@app.route('/subtitles/<path:url>')
+def get_subtitles(url):
+    try:
+        # URL 형식 검사 및 수정
+        if '://' not in url:
+            url = 'https://' + url
+        
+        ydl_opts = {
+            'no_color': True,
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,  # 비디오 다운로드 건너뛰기
+            'writesubtitles': True,  # 자막 정보 가져오기
+            'listsubtitles': True,   # 자막 목록 출력
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            # 자막 정보 추출
+            subtitles = {}
+            if 'subtitles' in info:
+                for lang, sub_info in info['subtitles'].items():
+                    formats = []
+                    for fmt in sub_info:
+                        formats.append({
+                            'ext': fmt.get('ext', ''),
+                            'format_id': lang + '-' + fmt.get('ext', '')
+                        })
+                    
+                    if formats:
+                        # 언어 이름 가져오기 (ex: 'en' -> 'English')
+                        lang_name = get_language_name(lang)
+                        subtitles[lang] = {
+                            'name': lang_name,
+                            'formats': formats,
+                            'code': lang
+                        }
+            
+            # 자동 생성 자막 정보 추가
+            if 'automatic_captions' in info:
+                for lang, sub_info in info['automatic_captions'].items():
+                    formats = []
+                    for fmt in sub_info:
+                        formats.append({
+                            'ext': fmt.get('ext', ''),
+                            'format_id': lang + '-auto-' + fmt.get('ext', '')
+                        })
+                    
+                    if formats:
+                        lang_name = get_language_name(lang) + ' (자동 생성)'
+                        subtitles[lang + '-auto'] = {
+                            'name': lang_name,
+                            'formats': formats,
+                            'code': lang,
+                            'auto': True
+                        }
+            
+            return {
+                'title': info.get('title', ''),
+                'subtitles': subtitles
+            }
+    
+    except Exception as e:
+        print(f"자막 정보 가져오기 오류: {str(e)}")
+        return {'error': str(e)}, 500
+
+# 언어 코드를 이름으로 변환하는 함수
+def get_language_name(lang_code):
+    language_map = {
+        'ko': '한국어', 'en': '영어', 'ja': '일본어', 'zh': '중국어',
+        'es': '스페인어', 'fr': '프랑스어', 'de': '독일어', 'ru': '러시아어',
+        'it': '이탈리아어', 'pt': '포르투갈어', 'ar': '아랍어', 'hi': '힌디어',
+        'th': '태국어', 'vi': '베트남어'
+    }
+    return language_map.get(lang_code, lang_code)
+
+# 자막 다운로드 함수 추가
+@app.route('/download_subtitle', methods=['POST'])
+def download_subtitle():
+    url = request.form['url']
+    format_id = request.form.get('format_id', '')  # 언어-확장자 형식
+    
+    if not url or not format_id:
+        return "URL과 자막 형식을 입력해주세요", 400
+    
+    download_id = str(uuid.uuid4())
+    download_status[download_id] = {
+        'status': '자막 다운로드 준비 중...',
+        'progress': 0,
+        'filename': None
+    }
+    
+    # 백그라운드로 다운로드 실행
+    thread = threading.Thread(target=download_subtitle_file, args=(url, download_id, format_id))
+    thread.daemon = True
+    thread.start()
+    
+    return {'download_id': download_id}
+
+def download_subtitle_file(url, download_id, format_id):
+    try:
+        # 형식 ID 파싱
+        lang, ext = format_id.rsplit('-', 1)
+        is_auto = False
+        
+        if '-auto-' in format_id:
+            lang = lang.replace('-auto', '')
+            is_auto = True
+        
+        # 저장 경로 확인
+        os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+        
+        # 기본 출력 경로 설정
+        output_template = os.path.join(DOWNLOAD_FOLDER, f"{download_id}.%(ext)s")
+        
+        ydl_opts = {
+            'skip_download': True,  # 비디오는 다운로드하지 않음
+            'outtmpl': output_template,
+            'no_color': True,
+        }
+        
+        # 자동 생성 자막 또는 일반 자막 설정
+        if is_auto:
+            ydl_opts['writeautomaticsub'] = True
+            ydl_opts['subtitleslangs'] = [lang]
+        else:
+            ydl_opts['writesubtitles'] = True
+            ydl_opts['subtitleslangs'] = [lang]
+        
+        # 자막 형식 설정
+        ydl_opts['subtitlesformat'] = ext
+        
+        download_status[download_id]['status'] = '자막 다운로드 중...'
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get('title', '자막 파일')
+            download_status[download_id]['filename'] = f"{title}.{ext}"
+            
+            # 파일 검색
+            for filename in os.listdir(DOWNLOAD_FOLDER):
+                if filename.startswith(download_id) or filename.endswith(f".{lang}.{ext}"):
+                    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+                    download_status[download_id]['filepath'] = filepath
+                    download_status[download_id]['status'] = '완료'
+                    break
+            else:
+                download_status[download_id]['status'] = '오류: 자막 파일을 찾을 수 없습니다'
+            
+    except Exception as e:
+        download_status[download_id]['status'] = f'오류: {str(e)}'
+        print(f"자막 다운로드 오류: {str(e)}")
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=5050, debug=True)
