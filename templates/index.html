@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>유튜브 다운로더</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="description" content="간편한 유튜브 동영상 다운로더">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" href="/static/images/icons/icon-192x192.png">
+    <link rel="apple-touch-icon" href="/static/images/icons/icon-192x192.png">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        select {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .progress {
+            height: 24px;
+            background-color: #f3f3f3;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 5px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        #status {
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        #download-link {
+            display: none;
+            margin-top: 15px;
+            background-color: #2196F3;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            display: inline-block;
+            font-weight: bold;
+        }
+        #download-link:hover {
+            background-color: #0b7dda;
+        }
+        #video-info {
+            margin: 20px 0;
+            display: none;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        #video-title {
+            margin-top: 0;
+            color: #333;
+        }
+        #video-thumbnail {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            margin: 10px 0;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        }
+        #format-selector {
+            display: none;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h3 {
+            color: #555;
+            margin-bottom: 10px;
+        }
+        .restart-btn {
+            background-color: #f44336;
+            margin-top: 15px;
+        }
+        .restart-btn:hover {
+            background-color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>유튜브 다운로더</h1>
+        <div id="download-form">
+            <input type="text" id="url" placeholder="유튜브 URL을 입력하세요">
+            <button onclick="checkVideo()">정보 가져오기</button>
+        </div>
+        
+        <div id="video-info">
+            <h2 id="video-title"></h2>
+            <img id="video-thumbnail" src="" alt="동영상 썸네일">
+            <p id="video-duration"></p>
+        </div>
+        
+        <div id="format-selector">
+            <h3>화질 선택</h3>
+            <select id="format-select"></select>
+            <button onclick="startDownload()">다운로드</button>
+        </div>
+        
+        <div id="download-progress" style="display: none;">
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <p id="status">준비 중...</p>
+            <a id="download-link" href="#" style="display: none;">파일 다운로드</a>
+            <button class="restart-btn" onclick="restartApp()">다른 영상 다운로드</button>
+        </div>
+    </div>
+
+<!-- body 끝 부분 -->
+    
+    <!-- 기존 스크립트를 유지하고, 서비스 워커 등록 코드만 추가 -->
+    <script>
+        let downloadId = null;
+        let statusInterval = null;
+        let formats = [];
+
+        function checkVideo() {
+            const url = document.getElementById('url').value;
+            if (!url) {
+                alert('URL을 입력해주세요');
+                return;
+            }
+
+            document.getElementById('video-info').style.display = 'none';
+            document.getElementById('format-selector').style.display = 'none';
+            document.getElementById('status').textContent = '비디오 정보를 가져오는 중...';
+            
+            fetch(`/formats/${encodeURIComponent(url)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('오류: ' + data.error);
+                    return;
+                }
+                
+                // 비디오 정보 표시
+                document.getElementById('video-title').textContent = data.title;
+                if (data.thumbnail) {
+                    document.getElementById('video-thumbnail').src = data.thumbnail;
+                }
+                
+                if (data.duration) {
+                    const minutes = Math.floor(data.duration / 60);
+                    const seconds = data.duration % 60;
+                    document.getElementById('video-duration').textContent = 
+                        `재생 시간: ${minutes}분 ${seconds}초`;
+                }
+                
+                document.getElementById('video-info').style.display = 'block';
+                
+                // 포맷 선택 옵션 설정
+                const formatSelect = document.getElementById('format-select');
+                formatSelect.innerHTML = '';
+                formats = data.formats;
+                
+                formats.forEach((format, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = format.display;
+                    formatSelect.appendChild(option);
+                });
+                
+                document.getElementById('format-selector').style.display = 'block';
+                document.getElementById('status').textContent = '다운로드할 화질을 선택하세요';
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = '오류: ' + error;
+            });
+        }
+
+        function startDownload() {
+            const url = document.getElementById('url').value;
+            const formatIndex = document.getElementById('format-select').value;
+            const formatId = formats[formatIndex].format_id;
+            
+            document.getElementById('download-form').style.display = 'none';
+            document.getElementById('video-info').style.display = 'none';
+            document.getElementById('format-selector').style.display = 'none';
+            document.getElementById('download-progress').style.display = 'block';
+            document.getElementById('status').textContent = '다운로드 준비 중...';
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('download-link').style.display = 'none';
+
+            fetch('/download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    'url': url,
+                    'format_id': formatId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                downloadId = data.download_id;
+                statusInterval = setInterval(checkStatus, 1000);
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = '오류: ' + error;
+            });
+        }
+
+        function checkStatus() {
+            if (!downloadId) return;
+
+            fetch(`/status/${downloadId}`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').textContent = data.status;
+                document.getElementById('progress-bar').style.width = `${data.progress}%`;
+
+                if (data.status === '완료') {
+                    clearInterval(statusInterval);
+                    document.getElementById('download-link').href = `/get_file/${downloadId}`;
+                    document.getElementById('download-link').style.display = 'inline-block';
+                    document.getElementById('download-link').textContent = '파일 다운로드: ' + data.filename;
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = '오류: ' + error;
+                clearInterval(statusInterval);
+            });
+        }
+        
+        function restartApp() {
+            // 다운로드 진행 상태 초기화
+            if (statusInterval) {
+                clearInterval(statusInterval);
+            }
+            
+            // UI 초기화
+            document.getElementById('download-form').style.display = 'block';
+            document.getElementById('video-info').style.display = 'none';
+            document.getElementById('format-selector').style.display = 'none';
+            document.getElementById('download-progress').style.display = 'none';
+            document.getElementById('url').value = '';
+            document.getElementById('status').textContent = '';
+            document.getElementById('progress-bar').style.width = '0%';
+            
+            // 상태 변수 초기화
+            downloadId = null;
+            formats = [];
+        }
+
+        // 서비스 워커 등록 (기존 코드 아래에 추가)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/static/js/service-worker.js')
+                .then(function(registration) {
+                    console.log('서비스 워커 등록 성공:', registration.scope);
+                })
+                .catch(function(error) {
+                    console.log('서비스 워커 등록 실패:', error);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+    "name": "유튜브 다운로더",
+    "short_name": "유튜브 다운로더",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#efefef",
+    "theme_color": "#4CAF50",
+    "orientation": "portrait-primary",
+    "icons": [
+      {
+        "src": "/static/images/icons/icon-192x192.png",
+        "type": "image/png",
+        "sizes": "192x192"
+      },
+      {
+        "src": "/static/images/icons/icon-512x512.png",
+        "type": "image/png",
+        "sizes": "512x512"
+      }
+    ]
+  }
